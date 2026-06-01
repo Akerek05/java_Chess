@@ -3,36 +3,33 @@ import java.util.List;
 import java.util.Random;
 import java.util.Scanner;
 import java.io.Serializable;
+import java.util.Stack;
+
 public class Board implements Serializable{
 private static final long serialVersionUID = 1L;
+public static final int SIZE = 8;
 private Piece[][] pieces;
-private Piece[][] previousBoardState1; // Board state before player's move
-private Piece[][] previousBoardState2; // Board state before AI's move
-private Piece[][] previousBoardState3; // Board state before both moves
+private Stack<MoveCommand> moveHistory = new Stack<>();
 
 public Board() {
-	pieces = new Piece[8][8];
-	previousBoardState1 = new Piece[8][8];
-	previousBoardState2 = new Piece[8][8];
-	previousBoardState3 = new Piece[8][8];
-	
+	pieces = new Piece[SIZE][SIZE];
 }
 public Piece[][] getPieces() {
 	return pieces;
 }
 public void setupEmptyBoard() {
-    for (int x = 0; x < 8; x++) {
-        for (int y = 0; y < 8; y++) {
+    for (int x = 0; x < SIZE; x++) {
+        for (int y = 0; y < SIZE; y++) {
             pieces[x][y] = new Empty(); // Fill with empty pieces
         }
     }
 }
 
 public void setupBoard() {
-    pieces = new Piece[8][8]; 
+    pieces = new Piece[SIZE][SIZE]; 
 
     // Set up pawns
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < SIZE; i++) {
         pieces[1][i] = new Pawn(true);  // White pawns
         pieces[6][i] = new Pawn(false); // Black pawns
     }
@@ -65,36 +62,21 @@ public void setupBoard() {
 
     // Fill the remaining spaces with Empty pieces
     for (int i = 2; i < 6; i++) {
-        for (int j = 0; j < 8; j++) {
+        for (int j = 0; j < SIZE; j++) {
             pieces[i][j] = new Empty();
         }
     }
 }
-private void cloneBoard(Piece[][] sourceBoard, Piece[][] destinationBoard) {
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
-            if (sourceBoard[i][j] != null) {
-                destinationBoard[i][j] = sourceBoard[i][j].clone();
-            } else {
-                destinationBoard[i][j] = null; // Set to null if the square is empty
-            }
-        }
+public void undoLastMove() {
+    if (!moveHistory.isEmpty()) {
+        MoveCommand command = moveHistory.pop();
+        command.undo();
     }
-}
-
-public void saveBoardState() {
-    // Shift the board states
-	cloneBoard(previousBoardState2, previousBoardState3); 
-    cloneBoard(previousBoardState1, previousBoardState2); 
-	cloneBoard(pieces, previousBoardState1); // Save the current board state to previousBoardState3
-    
 }
 
 // Reset board to the saved state
 public void restorePreviousState() {
-	cloneBoard(previousBoardState1, pieces); // Restore to the most recent saved state
-	cloneBoard(previousBoardState2, previousBoardState1); // Restore to the most recent saved state
-	cloneBoard(previousBoardState3, previousBoardState2); // Restore to the most recent saved state
+	undoLastMove();
 }
 
 public List<Move> filterMoves(int x, int y) {
@@ -105,8 +87,8 @@ public List<Move> filterMoves(int x, int y) {
 
     // Locate the current player's king
     int kingX = -1, kingY = -1;
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
+    for (int i = 0; i < SIZE; i++) {
+        for (int j = 0; j < SIZE; j++) {
             Piece piece = pieces[i][j];
             if (piece.type() == Piece.PieceType.KING && piece.isWhite() == currentPiece.isWhite()) {
                 kingX = i;
@@ -122,7 +104,7 @@ public List<Move> filterMoves(int x, int y) {
         int targetX = move.getX();
         int targetY = move.getY();
 
-        if (targetX >= 0 && targetX < 8 && targetY >= 0 && targetY < 8) {
+        if (targetX >= 0 && targetX < SIZE && targetY >= 0 && targetY < SIZE) {
             Piece targetPiece = pieces[targetX][targetY];
             boolean isValidMove = false;
 
@@ -211,8 +193,8 @@ public void promotePawn(int x, int y, char promotionType) {
 private List<Move> getAttackingMoves(int x, int y, boolean opponentIsWhite) {
     List<Move> attackingMoves = new ArrayList<>();
 
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
+    for (int i = 0; i < SIZE; i++) {
+        for (int j = 0; j < SIZE; j++) {
             Piece piece = pieces[i][j];
             if (piece.isNotEmpty() && piece.isWhite() == opponentIsWhite) {
                 List<Move> possibleMoves = piece.possibleMovesFrom(i, j);
@@ -255,7 +237,7 @@ private boolean isPathClear(int startX, int startY, int endX, int endY) {
 
     // Traverse along the path until reaching the end coordinates
     while (currentX != endX || currentY != endY) {
-    	if (currentX < 0 || currentX >= 8 || currentY < 0 || currentY >= 8) {
+    	if (currentX < 0 || currentX >= SIZE || currentY < 0 || currentY >= SIZE) {
             return false;  // Out of bounds, so path is considered blocked
         }
     	if (pieces[currentX][currentY].type() != Piece.PieceType.EMPTY) {
@@ -268,9 +250,9 @@ private boolean isPathClear(int startX, int startY, int endX, int endY) {
 }
 
 public Piece[][] getPlayablePieces(boolean white){
-	Piece[][] playablePieces = new Piece[8][8];
-	for(int i=0;i<8;i++) {
-		for(int j=0;j<8;j++) {
+	Piece[][] playablePieces = new Piece[SIZE][SIZE];
+	for(int i=0;i<SIZE;i++) {
+		for(int j=0;j<SIZE;j++) {
 			if(pieces[i][j].isWhite()==white & pieces[i][j].isNotEmpty()) {				
 				playablePieces[i][j]=pieces[i][j];				
 			}
@@ -288,22 +270,9 @@ public boolean move(int x, int y, Move move) {
         return false;
     }
 
-    // Save the board state before making the move
-    saveBoardState();
-
-    int targetX = move.getX();
-    int targetY = move.getY();
-    Piece movingPiece = pieces[x][y];
-
-    System.out.println("Moving piece: " + movingPiece + " to (" + targetX + "," + targetY + ")");
-
-    if (move.getMoveType() == Move.MoveType.ATTACK) {
-        pieces[targetX][targetY] = movingPiece;
-        pieces[x][y] = new Empty();
-    } else if (move.getMoveType() == Move.MoveType.MOVE) {
-        pieces[targetX][targetY] = movingPiece;
-        pieces[x][y] = new Empty();
-    }
+    MoveCommand command = new PieceMoveCommand(this, x, y, move);
+    command.execute();
+    moveHistory.push(command);
 
     System.out.println("Move successful. Updated board.");
     return true;
@@ -315,8 +284,8 @@ public void makeComputerMove(boolean isWhite) {
     Random random = new Random();
     Piece[][] playablePieces = getPlayablePieces(isWhite);
 
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
+    for (int i = 0; i < SIZE; i++) {
+        for (int j = 0; j < SIZE; j++) {
             Piece piece = playablePieces[i][j];
             if (piece != null) {
                 List<Move> moves = filterMoves(i, j);
@@ -341,8 +310,8 @@ public boolean isCheckmate(boolean whiteTurn) {
 
     // Locate the current player's king
     int kingX = -1, kingY = -1;
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
+    for (int i = 0; i < SIZE; i++) {
+        for (int j = 0; j < SIZE; j++) {
             Piece piece = pieces[i][j];
             if (piece.type() == Piece.PieceType.KING && piece.isWhite() == whiteTurn) {
                 kingX = i;
@@ -357,8 +326,8 @@ public boolean isCheckmate(boolean whiteTurn) {
     boolean kingInCheck = !getAttackingMoves(kingX, kingY, !whiteTurn).isEmpty();
 
     // Check if there are any valid moves for the current player
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < 8; j++) {
+    for (int i = 0; i < SIZE; i++) {
+        for (int j = 0; j < SIZE; j++) {
             Piece piece = playablePieces[i][j];
             if (piece != null) {
                 List<Move> moves = filterMoves(i, j);
@@ -377,14 +346,6 @@ public Move.MoveType getMoveType(int startX, int startY, int endX, int endY) {
     return targetPiece.isNotEmpty() && targetPiece.isWhite() != pieces[startX][startY].isWhite() 
         ? Move.MoveType.ATTACK 
         : Move.MoveType.MOVE;
-}
-public Piece[][] getPreviousBoardState1() {
-	
-	return previousBoardState1;
-}
-public Piece[][] getPreviousBoardState2() {
-	
-	return previousBoardState2;
 }
 
 

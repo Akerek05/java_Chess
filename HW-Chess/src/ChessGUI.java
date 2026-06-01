@@ -1,23 +1,19 @@
 import javax.swing.*;
 import java.awt.*;
 import java.io.*;
-import java.util.concurrent.Executors;
 import java.util.List;
 
-
 public class ChessGUI extends JFrame {
-	private Board board;
+    private GameController controller;
     private JButton[][] boardButtons;
-    private boolean whiteTurn = true; // White always starts
-    private int selectedX = -1, selectedY = -1;
-    private JButton undoButton, saveButton, surrenderButton; // Save button added
     private static final String PIECES_PATH = "./pieces/";
-    
+    private JPanel mainPanel;
 
     public ChessGUI() {
+        this.controller = new GameController(new Board(), this);
         setupMainMenu();
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(850, 800); // Setting size for the window
+        setSize(850, 800);
         setVisible(true);
     }
 
@@ -31,7 +27,7 @@ public class ChessGUI extends JFrame {
 
         JButton singlePlayerButton = new JButton("Single Player");
         JButton twoPlayerButton = new JButton("Two Player Hotseat");
-        JButton loadGameButton = new JButton("Load Game"); // Load button added
+        JButton loadGameButton = new JButton("Load Game");
         JButton exitButton = new JButton("Exit");
 
         getContentPane().removeAll();
@@ -49,10 +45,11 @@ public class ChessGUI extends JFrame {
 
         add(menuPanel);
         revalidate();
+        repaint();
 
         singlePlayerButton.addActionListener(e -> setupSinglePlayerMenu());
         twoPlayerButton.addActionListener(e -> startGame(false, true));
-        loadGameButton.addActionListener(e -> loadGame()); // Load button logic
+        loadGameButton.addActionListener(e -> loadGame());
         exitButton.addActionListener(e -> System.exit(0));
     }
 
@@ -80,46 +77,35 @@ public class ChessGUI extends JFrame {
         blackButton.addActionListener(e -> startGame(true, false));
     }
 
-    private boolean onePlayerMode = false;
-    private boolean playerPlaysWhite = true;
-
     private void startGame(boolean singlePlayer, boolean playerPlaysWhite) {
-        this.onePlayerMode = singlePlayer;
-        this.playerPlaysWhite = playerPlaysWhite;
-
-        board = new Board();
-        board.setupBoard();
         setupChessBoard();
-
-        // Start the game in a separate thread for non-blocking execution
-        Executors.newSingleThreadExecutor().submit(() -> Game());
+        controller.startNewGame(singlePlayer, playerPlaysWhite);
     }
 
     private void setupChessBoard() {
         JPanel chessBoardPanel = new JPanel(new BorderLayout());
+        JPanel chessGridPanel = new JPanel(new GridLayout(Board.SIZE, Board.SIZE));
+        boardButtons = new JButton[Board.SIZE][Board.SIZE];
 
-        JPanel chessGridPanel = new JPanel(new GridLayout(8, 8));
-        boardButtons = new JButton[8][8];
-
-        for (int x = 0; x < 8; x++) {
-            for (int y = 0; y < 8; y++) {
+        for (int x = 0; x < Board.SIZE; x++) {
+            for (int y = 0; y < Board.SIZE; y++) {
                 JButton button = new JButton();
                 button.setBackground((x + y) % 2 == 0 ? Color.WHITE : Color.GRAY);
                 final int fx = x, fy = y;
-                button.addActionListener(e -> handleSquareClick(fx, fy));
+                button.addActionListener(e -> controller.handleSquareClick(fx, fy));
                 boardButtons[x][y] = button;
                 chessGridPanel.add(button);
             }
         }
 
-        undoButton = new JButton("Undo");
-        undoButton.addActionListener(e -> handleUndo());
+        JButton undoButton = new JButton("Undo");
+        undoButton.addActionListener(e -> controller.handleUndo());
 
-        saveButton = new JButton("Save Game"); // Save button added
+        JButton saveButton = new JButton("Save Game");
         saveButton.addActionListener(e -> saveGame());
 
-        surrenderButton = new JButton("Surrender");
-        surrenderButton.addActionListener(e -> handleSurrender());
+        JButton surrenderButton = new JButton("Surrender");
+        surrenderButton.addActionListener(e -> controller.handleSurrender());
 
         JPanel sidePanel = new JPanel();
         sidePanel.setLayout(new BoxLayout(sidePanel, BoxLayout.Y_AXIS));
@@ -129,7 +115,7 @@ public class ChessGUI extends JFrame {
         sidePanel.add(Box.createRigidArea(new Dimension(0, 10)));
         sidePanel.add(surrenderButton);
 
-        JPanel mainPanel = new JPanel(new BorderLayout());
+        mainPanel = new JPanel(new BorderLayout());
         mainPanel.add(chessGridPanel, BorderLayout.CENTER);
         mainPanel.add(sidePanel, BorderLayout.EAST);
 
@@ -138,179 +124,17 @@ public class ChessGUI extends JFrame {
 
         setContentPane(chessBoardPanel);
         revalidate();
-        updateBoard();
     }
 
-
-    private void handleSurrender() {
-        // Handle the surrender logic
-        int response = JOptionPane.showConfirmDialog(this, "Are you sure you want to surrender?", 
-                "Surrender", JOptionPane.YES_NO_OPTION);
-        if (response == JOptionPane.YES_OPTION) {
-            String winner = whiteTurn ? "Black" : "White"; // The opponent wins
-            JOptionPane.showMessageDialog(this, "You have surrendered. " + winner + " wins!");
-            resetGame();
-            setupMainMenu(); // Return to the main menu after surrender
-        }
-    }
-
-    private void Game() {
-        while (true) {
-            if (board.isCheckmate(whiteTurn)) {
-                String winner = whiteTurn ? "Black" : "White"; // The opponent wins
-                JOptionPane.showMessageDialog(this, winner + " wins by checkmate!");
-                resetGame();
-                setupMainMenu(); // Return to the main menu after checkmate
-                return;
-            }
-
-            if (onePlayerMode) {
-                if (whiteTurn == playerPlaysWhite) {
-                    // Player's turn
-                    waitForPlayerMove(true);
-                    promotePawnsIfNeeded();
-                } else {
-                    // AI's turn
-                    board.makeComputerMove(whiteTurn);
-                    updateBoard();
-                    promotePawnsIfNeeded();  // Check if AI's pawn needs promotion
-                }
-            } else {
-                // Two-player mode
-                waitForPlayerMove(whiteTurn);
-                promotePawnsIfNeeded();
-            }
-
-            whiteTurn = !whiteTurn; // Switch turns
-        }
-    }
-    private void promotePawnsIfNeeded() {
-        for (int x = 0; x < 8; x++) {
-            for (int y = 0; y < 8; y++) {
-                Piece piece = board.getPieces()[x][y];
-                if (piece instanceof Pawn && (x == 0 || x == 7)) {
-                    if (onePlayerMode) {
-                        if (whiteTurn == playerPlaysWhite) {
-                            showPromotionDialog(x, y); // Player's turn
-                        } else {
-                            board.promotePawn(x, y, 'Q'); // AI automatically promotes to Queen
-                            updateBoard();
-                        }
-                    } else {
-                        showPromotionDialog(x, y); // Two player mode
-                    }
-                }
-            }
-        }
-    }
-
-
-    private synchronized void waitForPlayerMove(boolean isWhiteTurn) {
-        try {
-            while (true) {
-                wait(); // Wait for player move to complete
-                break;
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    private void handleSquareClick(int x, int y) {
-        if (selectedX == -1 && selectedY == -1) {
-            Piece piece = board.getPieces()[x][y];
-            if (piece.isWhite() == whiteTurn && piece.isNotEmpty()) {
-                selectedX = x;
-                selectedY = y;
-                highlightPossibleMoves(x, y);
-            }
-        } else {
-            Move.MoveType moveType = board.getMoveType(selectedX, selectedY, x, y);
-            Move move = new Move(selectedX, selectedY, x, y, moveType);
-
-            if (board.filterMoves(selectedX, selectedY).contains(move) && board.move(selectedX, selectedY, move)) {
-                if (isPawnPromotion(x, y)) {
-                    if (whiteTurn) {
-                        showPromotionDialog(x, y); // Player chooses promotion
-                    } else {
-                        board.promotePawn(x, y, 'Q'); // AI automatically promotes to queen
-                    }
-                }
-                updateBoard();
-                resetSelection();
-                synchronized (this) {
-                    notify(); // Notify the game thread that the move is complete
-                }
-            } else {
-                JOptionPane.showMessageDialog(this, "Invalid move. Try again.");
-                resetSelection();
-            }
-        }
-    }
-
-
-    private boolean isPawnPromotion(int x, int y) {
-        Piece piece = board.getPieces()[x][y];
-        return piece.isNotEmpty() && piece.type() == Piece.PieceType.PAWN &&
-               ((piece.isWhite() && x == 0) || (!piece.isWhite() && x == 7));
-    }
-
-    private void showPromotionDialog(int x, int y) {
-        // Ensure dialog is created on the Event Dispatch Thread
-        SwingUtilities.invokeLater(() -> {
-            JDialog promotionDialog = new JDialog(this, "Pawn Promotion", true); // Modal dialog
-            promotionDialog.setLayout(new GridLayout(1, 4));
-            promotionDialog.setSize(300, 100);
-
-            String[] options = {"Queen", "Rook", "Bishop", "Knight"};
-            for (String option : options) {
-                JButton button = new JButton(option);
-                button.addActionListener(e -> {
-                    char promotionType = option.charAt(0); // First letter of the option
-                    board.promotePawn(x, y, promotionType); // Update board with the selected piece
-                    promotionDialog.dispose(); // Close the dialog
-                    updateBoard(); // Refresh the board UI
-                });
-                promotionDialog.add(button);
-            }
-
-            promotionDialog.setLocationRelativeTo(this); // Center the dialog relative to the main window
-            promotionDialog.setVisible(true); // Show the dialog
-        });
-    }
-
-
-
-    private void highlightPossibleMoves(int x, int y) {
-        List<Move> moves = board.filterMoves(x, y);
-        for (Move move : moves) {
-            int targetX = move.getX();
-            int targetY = move.getY();
-            boardButtons[targetX][targetY].setBackground(Color.GREEN);
-        }
-    }
-
-    private void resetSelection() {
-        selectedX = -1;
-        selectedY = -1;
-        for (int x = 0; x < 8; x++) {
-            for (int y = 0; y < 8; y++) {
-                boardButtons[x][y].setBackground((x + y) % 2 == 0 ? Color.WHITE : Color.GRAY);
-            }
-        }
-    }
-
-    private void updateBoard() {
-        Piece[][] pieces = board.getPieces();
-        for (int x = 0; x < 8; x++) {
-            for (int y = 0; y < 8; y++) {
+    public void updateBoard(Piece[][] pieces) {
+        for (int x = 0; x < Board.SIZE; x++) {
+            for (int y = 0; y < Board.SIZE; y++) {
                 Piece piece = pieces[x][y];
                 if (piece.isNotEmpty()) {
                     String imageFileName = getImageFileName(piece);
-                    ImageIcon pieceIcon = new ImageIcon(imageFileName);
-                    boardButtons[x][y].setIcon(pieceIcon);
+                    boardButtons[x][y].setIcon(new ImageIcon(imageFileName));
                 } else {
-                    boardButtons[x][y].setIcon(null); // No piece on this square
+                    boardButtons[x][y].setIcon(null);
                 }
             }
         }
@@ -322,50 +146,71 @@ public class ChessGUI extends JFrame {
         return PIECES_PATH + colorPrefix + "-" + pieceName + ".png";
     }
 
-    private void handleUndo() {
-        board.restorePreviousState(); // Restore the previous board state
-        updateBoard(); // Update the UI to reflect the restored state
-        whiteTurn = !whiteTurn; // Switch the turn back to the other player
+    public void highlightMoves(List<Move> moves) {
+        clearHighlights();
+        for (Move move : moves) {
+            boardButtons[move.getX()][move.getY()].setBackground(Color.GREEN);
+        }
     }
 
-    private void resetGame() {
-        board = new Board();
-        board.setupBoard();
-        setupChessBoard();
-        whiteTurn = true; // Reset turn to white
+    public void clearHighlights() {
+        for (int x = 0; x < Board.SIZE; x++) {
+            for (int y = 0; y < Board.SIZE; y++) {
+                boardButtons[x][y].setBackground((x + y) % 2 == 0 ? Color.WHITE : Color.GRAY);
+            }
+        }
     }
+
+    public void showMessage(String message) {
+        JOptionPane.showMessageDialog(this, message);
+    }
+
+    public void returnToMainMenu() {
+        setupMainMenu();
+    }
+
+    public char showPromotionDialog() {
+        String[] options = {"Queen", "Rook", "Bishop", "Knight"};
+        int selection = JOptionPane.showOptionDialog(this, "Choose piece for promotion:", 
+                "Pawn Promotion", JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, 
+                null, options, options[0]);
+        if (selection == -1) return 'Q';
+        return options[selection].charAt(0);
+    }
+
     private void saveGame() {
         JFileChooser fileChooser = new JFileChooser();
-        int result = fileChooser.showSaveDialog(this);
-
-        if (result == JFileChooser.APPROVE_OPTION) {
+        if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
             File file = fileChooser.getSelectedFile();
             try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(file))) {
-                oos.writeObject(board); // Save board
-                oos.writeBoolean(whiteTurn); // Save current turn
-                JOptionPane.showMessageDialog(this, "Game saved successfully!");
+                oos.writeObject(controller.getBoard());
+                oos.writeBoolean(controller.getWhiteTurn());
+                showMessage("Game saved successfully!");
             } catch (IOException e) {
-                JOptionPane.showMessageDialog(this, "Failed to save the game: " + e.getMessage());
+                showMessage("Failed to save: " + e.getMessage());
             }
         }
     }
 
     private void loadGame() {
         JFileChooser fileChooser = new JFileChooser();
-        int result = fileChooser.showOpenDialog(this);
-
-        if (result == JFileChooser.APPROVE_OPTION) {
+        if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             File file = fileChooser.getSelectedFile();
             try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(file))) {
-                board = (Board) ois.readObject(); // Load board
-                whiteTurn = ois.readBoolean(); // Load current turn
+                Board board = (Board) ois.readObject();
+                boolean whiteTurn = ois.readBoolean();
+                
                 setupChessBoard();
-                JOptionPane.showMessageDialog(this, "Game loaded successfully!");
+                this.controller = new GameController(board, this);
+                this.controller.setWhiteTurn(whiteTurn);
+                updateBoard(board.getPieces());
+                showMessage("Game loaded successfully!");
             } catch (IOException | ClassNotFoundException e) {
-                JOptionPane.showMessageDialog(this, "Failed to load the game: " + e.getMessage());
+                showMessage("Failed to load: " + e.getMessage());
             }
         }
     }
+
     public static void main(String[] args) {
         SwingUtilities.invokeLater(ChessGUI::new);
     }

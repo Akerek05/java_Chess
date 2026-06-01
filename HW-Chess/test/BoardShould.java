@@ -1,6 +1,5 @@
 import static org.junit.jupiter.api.Assertions.*;
 import java.util.List;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +19,7 @@ class BoardShould {
         Piece[][] pieces = board.getPieces();
 
         // Check pawns
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < Board.SIZE; i++) {
             assertEquals(Piece.PieceType.PAWN, pieces[1][i].type());
             assertEquals(Piece.PieceType.PAWN, pieces[6][i].type());
             assertTrue(pieces[1][i].isWhite());
@@ -76,73 +75,58 @@ class BoardShould {
 
         // Check empty squares in the middle of the board
         for (int i = 2; i < 6; i++) {
-            for (int j = 0; j < 8; j++) {
+            for (int j = 0; j < Board.SIZE; j++) {
                 assertEquals(Piece.PieceType.EMPTY, pieces[i][j].type());
             }
         }
     }
 	
-    
-    @Test
-    void testSaveBoardState() {
-        // Place a white king at (4, 4)
-        board.getPieces()[4][4] = new King(true);
-
-        // Save the initial board state
-        board.saveBoardState();
-
-        // Modify the board
-        board.getPieces()[4][4] = new Empty();
-        board.getPieces()[3][3] = new Queen(false);
-
-        // Save the modified board state
-        board.saveBoardState();
-
-        // Check previous board states
-        Piece[][] previousState1 = board.getPreviousBoardState1();
-        Piece[][] previousState2 = board.getPreviousBoardState2();
-
-        // Assert the states are saved correctly
-        assertNotNull(previousState1[3][3], "Previous state 1 should have a black queen at (3, 3)");
-        assertEquals(Piece.PieceType.QUEEN, previousState1[3][3].type(), "Previous state 1 should have a queen at (3, 3)");
-        assertEquals(previousState1[4][4].type(), board.getPieces()[4][4].type(),"Previous state 1 should not have a piece at (4, 4)");
-
-        assertNotNull(previousState2[4][4], "Previous state 2 should have the white king at (4, 4)");
-        assertEquals(Piece.PieceType.KING, previousState2[4][4].type(), "Previous state 2 should have a king at (4, 4)");
-    }
-
     @Test
     void testRestorePreviousState() {
         // Place initial pieces
-        board.getPieces()[4][4] = new King(true);
-        board.saveBoardState();
+        board.getPieces()[0][0] = new King(true);
+        board.getPieces()[1][0] = new Rook(false);
+        
+        // Execute a move: King captures Rook at (1,0)
+        Move move1 = new Move(0, 0, 1, 0, Move.MoveType.ATTACK);
+        assertTrue(board.move(0, 0, move1));
 
-        // Modify the board
-        board.getPieces()[4][4] = new Empty();
-        board.getPieces()[3][3] = new Queen(false);
-        board.saveBoardState();
+        // Execute another move: King moves to (1,1)
+        Move move2 = new Move(1, 0, 1, 1, Move.MoveType.MOVE);
+        assertTrue(board.move(1, 0, move2));
 
-        // Modify the board again
-        board.getPieces()[2][2] = new Rook(true);
-        board.saveBoardState();
+        // State after 2 moves
+        assertEquals(Piece.PieceType.KING, board.getPieces()[1][1].type());
+        assertEquals(Piece.PieceType.EMPTY, board.getPieces()[1][0].type());
 
-        // Restore to the previous state
+        // Undo move 2
         board.restorePreviousState();
+        assertEquals(Piece.PieceType.KING, board.getPieces()[1][0].type());
+        assertEquals(Piece.PieceType.EMPTY, board.getPieces()[1][1].type());
+
+        // Undo move 1
         board.restorePreviousState();
-        Piece[][] restoredState = board.getPieces();
+        assertEquals(Piece.PieceType.KING, board.getPieces()[0][0].type());
+        assertEquals(Piece.PieceType.ROOK, board.getPieces()[1][0].type());
+        assertFalse(board.getPieces()[1][0].isWhite());
+    }
 
-        // Assert the board matches the last saved state
-        assertNotNull(restoredState[3][3], "Restored state should have a black queen at (3, 3)");
-        assertEquals(Piece.PieceType.QUEEN, restoredState[3][3].type(), "Restored state should have a queen at (3, 3)");
-        assertEquals(restoredState[2][2].type(),Piece.PieceType.EMPTY, "Restored state should not have a rook at (2, 2)");
-
-        // Restore again
-        board.restorePreviousState();
-        restoredState = board.getPieces();
-
-        assertNotNull(restoredState[4][4], "Restored state should have a white king at (4, 4)");
-        assertEquals(Piece.PieceType.KING, restoredState[4][4].type(), "Restored state should have a king at (4, 4)");
-        assertEquals(restoredState[3][3].type(),Piece.PieceType.EMPTY, "Restored state should not have a queen at (3, 3)");
+    @Test
+    void testInfiniteUndoCapability() {
+        board.getPieces()[0][0] = new King(true);
+        
+        // Make 10 moves
+        for (int i = 0; i < 7; i++) {
+            board.move(i, 0, new Move(i, 0, i+1, 0, Move.MoveType.MOVE));
+        }
+        
+        assertEquals(Piece.PieceType.KING, board.getPieces()[7][0].type());
+        
+        // Undo all 7 moves
+        for (int i = 0; i < 7; i++) {
+            board.undoLastMove();
+        }
+        
+        assertEquals(Piece.PieceType.KING, board.getPieces()[0][0].type());
     }
 }
-
