@@ -80,15 +80,19 @@ public class ChessGUI extends JFrame {
         blackButton.addActionListener(e -> startGame(true, false));
     }
 
+    private boolean onePlayerMode = false;
+    private boolean playerPlaysWhite = true;
+
     private void startGame(boolean singlePlayer, boolean playerPlaysWhite) {
-        
+        this.onePlayerMode = singlePlayer;
+        this.playerPlaysWhite = playerPlaysWhite;
 
         board = new Board();
         board.setupBoard();
         setupChessBoard();
 
         // Start the game in a separate thread for non-blocking execution
-        Executors.newSingleThreadExecutor().submit(() -> Game(singlePlayer, playerPlaysWhite));
+        Executors.newSingleThreadExecutor().submit(() -> Game());
     }
 
     private void setupChessBoard() {
@@ -150,7 +154,7 @@ public class ChessGUI extends JFrame {
         }
     }
 
-    private void Game(boolean onePlayer, boolean playerIsWhite) {
+    private void Game() {
         while (true) {
             if (board.isCheckmate(whiteTurn)) {
                 String winner = whiteTurn ? "Black" : "White"; // The opponent wins
@@ -160,39 +164,40 @@ public class ChessGUI extends JFrame {
                 return;
             }
 
-            if (onePlayer) {
-                if (whiteTurn == playerIsWhite) {
+            if (onePlayerMode) {
+                if (whiteTurn == playerPlaysWhite) {
                     // Player's turn
                     waitForPlayerMove(true);
-                    promotePawnsIfNeeded(playerIsWhite,onePlayer);
+                    promotePawnsIfNeeded();
                 } else {
                     // AI's turn
                     board.makeComputerMove(whiteTurn);
                     updateBoard();
-                    promotePawnsIfNeeded(playerIsWhite,onePlayer);  // Check if AI's pawn needs promotion
+                    promotePawnsIfNeeded();  // Check if AI's pawn needs promotion
                 }
             } else {
                 // Two-player mode
                 waitForPlayerMove(whiteTurn);
-                promotePawnsIfNeeded(playerIsWhite,onePlayer);
+                promotePawnsIfNeeded();
             }
 
             whiteTurn = !whiteTurn; // Switch turns
         }
     }
-    private void promotePawnsIfNeeded(boolean playerIsWhite,boolean onePlayer) {
+    private void promotePawnsIfNeeded() {
         for (int x = 0; x < 8; x++) {
             for (int y = 0; y < 8; y++) {
                 Piece piece = board.getPieces()[x][y];
                 if (piece instanceof Pawn && (x == 0 || x == 7)) {
-                    if (whiteTurn==playerIsWhite ) {
-                        showPromotionDialog(x, y); // Player's turn - show promotion dialog
-                    }else if(!onePlayer) {
-                    	showPromotionDialog(x, y);
-                    }
-                    else {
-                        board.promotePawn(x, y, 'Q'); // AI automatically promotes to Queen
-                        updateBoard(); // Update board to reflect the promotion
+                    if (onePlayerMode) {
+                        if (whiteTurn == playerPlaysWhite) {
+                            showPromotionDialog(x, y); // Player's turn
+                        } else {
+                            board.promotePawn(x, y, 'Q'); // AI automatically promotes to Queen
+                            updateBoard();
+                        }
+                    } else {
+                        showPromotionDialog(x, y); // Two player mode
                     }
                 }
             }
